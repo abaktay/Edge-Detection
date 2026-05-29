@@ -4,21 +4,24 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
-#include "inc/stb_image.h"
-#include "inc/stb_image_write.h"
+#include "stb_image.h"
+#include "stb_image_write.h"
 
 
-float conv_(const std::vector<float>& mat, const float filter[3][3], int w, int h, int i, int j);
+using u8 = unsigned char;
+
+float conv(const std::vector<float>& mat, const float filter[3][3], int w, int h, int i, int j);
+
 int main()
 {
     int width, height, channels;
 
-    stbi_uc* data = stbi_load(
-        "resources/amogus.png",   
+    u8* data = stbi_load(
+        "resources/turin.jpg",   
         &width,        
         &height,       
         &channels,     
-        4              
+        0              
     );
 
     if (!data) {
@@ -26,7 +29,7 @@ int main()
         return 1;
     }
 
-    std::vector<float> image_(height*width, 0.0f); 
+    std::vector<float> image(height*width, 0.0f); 
     
     // Greyscale conversion formula per PMPP
     // L = r * 0.21 + g * 0.72 + b * 0.07
@@ -34,7 +37,7 @@ int main()
         for (int col = 0; col < width; col++) {
             int i = (row * width + col) * channels;
 
-            image_[row*width + col] = data[i] * 0.21f + data[i+1] * 0.72f + data[i+2] * 0.07f;
+            image[row*width + col] = data[i] * 0.21f + data[i+1] * 0.72f + data[i+2] * 0.07f;
         }
     } 
     stbi_image_free(data);
@@ -43,40 +46,39 @@ int main()
     const float Gx[3][3] = { {-1, 0, 1}, {-2, 0, 2}, {-1, 0, 1}};
     const float Gy[3][3] = { {-1, -2, -1}, {0, 0, 0}, {1, 2, 1}};
     
-    std::vector<float> res_x_(height*width, 0.0f); 
-    std::vector<float> res_y_(height*width, 0.0f); 
+    std::vector<float> res_x(height*width, 0.0f); 
+    std::vector<float> res_y(height*width, 0.0f); 
 
-    // Now, for all indices in image apply the 3x3 convolution
     for (int row = 0; row < height; row++) {
         for (int col = 0; col < width; col++) {
-            res_x_[row*width+col] = conv_(image_, Gx, width, height, row, col);
-            res_y_[row*width+col] = conv_(image_, Gy, width, height, row, col);
+            res_x[row*width+col] = conv(image, Gx, width, height, row, col);
+            res_y[row*width+col] = conv(image, Gy, width, height, row, col);
         }
     }
 
     std::vector<float> G(width*height,0.0f);
-    std::vector<stbi_uc> out_(width*height, 0.0f);
+    std::vector<u8> out(width*height, 0.0f);
 
     for (int row = 0; row < height; row++) {
         for (int col = 0; col < width; col++) {
-            G[row*width+col] = sqrtf((res_x_[row*width+col]*res_x_[row*width+col]) +(res_y_[row*width+col]*res_y_[row*width+col]));
+            G[row*width+col] = sqrtf((res_x[row*width+col]*res_x[row*width+col]) +(res_y[row*width+col]*res_y[row*width+col]));
 
-            out_[row*width+col] =  (G[row*width+col] > 100) ? 255 : 0;
+            out[row*width+col] =  (G[row*width+col] > 100) ? 255 : 0;
         }
     }
 
-    stbi_write_png(
-        "resources/edges.png",
+    stbi_write_jpg(
+        "resources/cpu.jpg",
         width,
         height,
-        1,
-        out_.data(),
+        1, // since it's greyscale 1 channel is fine
+        out.data(),
         width
     );
     return 0;
 }
 
-float conv_(const std::vector<float>& mat, const float filter[3][3], int w, int h, int i, int j) {
+float conv(const std::vector<float>& mat, const float filter[3][3], int w, int h, int i, int j) {
     float res = 0.0f;
     
     for (int dy = -1; dy <= 1; dy++) {
