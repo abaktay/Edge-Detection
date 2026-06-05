@@ -1,4 +1,4 @@
- (Almost Canny) Edge Detection 
+# (Almost Canny) Edge Detection 
 
 A [Canny-style ](https://en.wikipedia.org/wiki/Canny_edge_detector) edge detector implemented in both C++ (CPU) and CUDA (GPU). Given a JPEG image, it outputs the edges as an image.
 
