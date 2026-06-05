@@ -12,7 +12,6 @@
 using u8 = unsigned char;
 
 __constant__ float d_filter[3][3];
-__constant__ float d_filter_2[3][3];
 
 template<typename T, typename U>
 requires std::is_arithmetic_v<T> &&
@@ -47,34 +46,48 @@ int main()
 
     
     auto out = std::make_unique<unsigned char[]>(width*height);
-
-    greyscale(out.get(), data, width, height, channels);
-    stbi_write_jpg(
-        "resources/grey.jpg",
-        width,
-        height,
-        1,
-        out.get(),
-        width
-    );
-
     auto blur_out = std::make_unique<unsigned char[]>(width*height);
+    auto edge_out = std::make_unique<unsigned char[]>(width*height);
+
+    cudaEvent_t start, end;
+    cudaEventCreate(&start);
+    cudaEventCreate(&end);
+
+    cudaEventRecord(start);
+    greyscale(out.get(), data, width, height, channels);
+    // stbi_write_jpg(
+    //     "resources/grey.jpg",
+    //     width,
+    //     height,
+    //     1,
+    //     out.get(),
+    //     width
+    // );
+
     gaussian_blur(blur_out.get(), out.get(), width, height);
 
-    stbi_write_jpg(
-        "resources/blurred.jpg",
-        width,
-        height,
-        1,
-        blur_out.get(),
-        width
-    );
+    // stbi_write_jpg(
+    //     "resources/blurred.jpg",
+    //     width,
+    //     height,
+    //     1,
+    //     blur_out.get(),
+    //     width
+    // );
 
-    auto edge_out = std::make_unique<unsigned char[]>(width*height);
     edge(edge_out.get(), blur_out.get(), width, height);
+    cudaEventRecord(end);
+
+    cudaEventSynchronize(end);
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, end);
+    std::cout << "GPU kernel: " << ms << " ms\n";
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(end);
 
     stbi_write_jpg(
-        "resources/edges.jpg",
+        "resources/edges_gpu.jpg",
         width,
         height,
         1,
@@ -147,6 +160,7 @@ void edge(u8* out, const u8* in, int width, int height) {
     const float Gy[3][3] = { {-1, -2, -1}, {0, 0, 0}, {1, 2, 1}};
 
     // convolution for gx, gy, then sum
+    // can be improved by computing Gx and Gy in parallel
     cudaMemcpyToSymbol(d_filter, Gx, sizeof(float)*9);
     conv<<<gridSize, blockSize>>>(d_gx, d_in, width, height);
     
@@ -163,6 +177,8 @@ void edge(u8* out, const u8* in, int width, int height) {
 
     cudaFree(d_in);
     cudaFree(d_out);
+    cudaFree(d_gx);
+    cudaFree(d_gy);
 }
 
 void gaussian_blur(u8* out, const u8* in, int width, int height) {
@@ -223,8 +239,6 @@ void greyscale(u8 * Pout, const u8 * Pin, int width, int height, int channels) {
     );
 
     colorToGreyscaleConversion<<<gridSize, blockSize>>>(d_out, d_in, width, height, channels);
-    cudaError_t err = cudaGetLastError();
-    std::cout << cudaGetErrorString(err) << std::endl;
     cudaDeviceSynchronize();
 
     cudaMemcpy(Pout, d_out, out_size, cudaMemcpyDeviceToHost);
